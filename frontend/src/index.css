@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root {
+  --sage: #A8C3A0;
+  --mint: #CDE8D2;
+  --cream: #F7F4E9;
+  --teal: #A8DADC;
+  --yellow: #F6E7A1;
+  --coral: #F3B5A4;
+  --white: #FFFFFF;
+  --text: #263A32;
+  --muted: #64746D;
+  --border: #DDE7DD;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: var(--cream);
+  color: var(--text);
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
