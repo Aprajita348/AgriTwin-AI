@@ -77,11 +77,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "https://agritwin-ai-sigma.vercel.app",
-]
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 MODEL_PATH = os.path.join(
     os.path.dirname(os.path.dirname(__file__)),
