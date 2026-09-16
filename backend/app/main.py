@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 import os
 import joblib
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .database import Base, engine, get_db
 from .models import  (
@@ -89,17 +89,19 @@ MODEL_PATH = os.path.join(
 )
 
 class YieldPredictionRequest(BaseModel):
-    district_code: int
-    state_code: int
-    year: int
-    crop: str
-    district: str
-    state_name: str
-    area_1000_ha: float
-    rainfall_mm: float
-    avg_temp_c: float
-    max_temp_c: float
-    min_temp_c: float
+    district_code: int = Field(..., ge=1)
+    state_code: int = Field(..., ge=1)
+    year: int = Field(..., ge=1900, le=2100)
+
+    crop: str = Field(..., min_length=2, max_length=100)
+    district: str = Field(..., min_length=2, max_length=100)
+    state_name: str = Field(..., min_length=2, max_length=100)
+
+    area_1000_ha: float = Field(..., gt=0)
+    rainfall_mm: float = Field(..., ge=0)
+    avg_temp_c: float = Field(..., ge=-20, le=60)
+    max_temp_c: float = Field(..., ge=-20, le=70)
+    min_temp_c: float = Field(..., ge=-30, le=60)
 
 yield_model = joblib.load(MODEL_PATH)
 
@@ -1533,29 +1535,31 @@ def decision_replay(
 # ============================================================
 
 class DecisionPipelineRequest(BaseModel):
-    district_code: int
-    state_code: int
-    year: int
-    district: str
-    state_name: str
-    area_1000_ha: float
+    district_code: int = Field(..., ge=1)
+    state_code: int = Field(..., ge=1)
+    year: int = Field(..., ge=1900, le=2100)
 
-    farm_size_acres: float
-    previous_crop: str
+    district: str = Field(..., min_length=2, max_length=100)
+    state_name: str = Field(..., min_length=2, max_length=100)
+    area_1000_ha: float = Field(..., gt=0)
 
-    nitrogen: float
-    phosphorus: float
-    potassium: float
-    ph: float
-    organic_matter: float
+    farm_size_acres: float = Field(..., gt=0)
+    previous_crop: str = Field(..., min_length=2, max_length=100)
 
-    available_water_liters: float
-    irrigation_type: str
+    nitrogen: float = Field(..., ge=0)
+    phosphorus: float = Field(..., ge=0)
+    potassium: float = Field(..., ge=0)
 
-    rainfall_mm: float
-    avg_temp_c: float
-    max_temp_c: float
-    min_temp_c: float
+    ph: float = Field(..., ge=0, le=14)
+    organic_matter: float = Field(..., ge=0)
+
+    available_water_liters: float = Field(..., ge=0)
+    irrigation_type: str = Field(..., min_length=2, max_length=100)
+
+    rainfall_mm: float = Field(..., ge=0)
+    avg_temp_c: float = Field(..., ge=-20, le=60)
+    max_temp_c: float = Field(..., ge=-20, le=70)
+    min_temp_c: float = Field(..., ge=-30, le=60)
 
 
 @app.post("/decision-pipeline")
