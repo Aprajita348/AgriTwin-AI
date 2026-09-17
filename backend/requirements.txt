@@ -31,3 +31,4 @@ passlib[bcrypt]
 bcrypt==4.3.0
 python-dotenv
 email-validator==2.3.0
+google-genai==2.23.0
