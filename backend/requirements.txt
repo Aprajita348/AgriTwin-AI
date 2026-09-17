@@ -25,3 +25,8 @@ uvicorn==0.52.4
 xgboost-cpu==3.4.1
 
 SQLAlchemy==2.0.52
+psycopg[binary]
+python-jose[cryptography]
+passlib[bcrypt]
+bcrypt==4.3.0
+python-dotenv

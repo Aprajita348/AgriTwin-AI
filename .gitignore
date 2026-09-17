@@ -68,3 +68,6 @@ data/external/ICRISAT-Environment/
 
 *.log
 data/external/
+.coverage
+coverage.xml
+htmlcov/

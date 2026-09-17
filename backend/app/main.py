@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from .database import Base, engine, get_db
 from .models import  (
+    User,
     Farm,
     SoilProfile,
     CropProfile,
@@ -39,6 +40,19 @@ from .schemas import (
     DecisionFeedbackResponse
 )
 
+from .auth import (
+    create_access_token,
+    get_current_user,
+    hash_password,
+    verify_password,
+)
+from .auth_schemas import (
+    TokenResponse,
+    UserRegister,
+    UserResponse,
+    UserLogin,
+)
+
 from . import models
 from .water_optimizer import calculate_water_optimization
 from .fertilizer_optimizer import calculate_fertilizer_optimization
@@ -53,6 +67,12 @@ from .explainable_ai import explain_farming_decision
 from .agricultural_advisor import generate_agricultural_advice
 from .decision_replay import build_decision_replay
 from .decision_pipeline import run_decision_pipeline
+from .external_data import (
+    ExternalDataError,
+    get_live_weather,
+    get_soil_data,
+)
+from .gemini_advisor import generate_ai_advice
 
 
 # ============================================================
@@ -107,6 +127,106 @@ yield_model = joblib.load(MODEL_PATH)
 
 
 # ============================================================
+# AUTHENTICATION APIs
+# ============================================================
+
+@app.post(
+    "/auth/register",
+    response_model=UserResponse,
+    status_code=201,
+    tags=["Authentication"],
+    summary="Register a new user",
+)
+def register_user(
+    user_data: UserRegister,
+    db: Session = Depends(get_db),
+):
+    existing_username = (
+        db.query(User)
+        .filter(User.username == user_data.username)
+        .first()
+    )
+
+    if existing_username is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Username already registered",
+        )
+
+    existing_email = (
+        db.query(User)
+        .filter(User.email == user_data.email)
+        .first()
+    )
+
+    if existing_email is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Email already registered",
+        )
+
+    new_user = User(
+        username=user_data.username,
+        email=user_data.email,
+        hashed_password=hash_password(user_data.password),
+    )
+
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    return new_user
+
+
+@app.post(
+    "/auth/login",
+    response_model=TokenResponse,
+    tags=["Authentication"],
+    summary="Login and receive JWT access token",
+)
+def login_user(
+    user_data: UserLogin,
+    db: Session = Depends(get_db),
+):
+    user = (
+        db.query(User)
+        .filter(User.username == user_data.username)
+        .first()
+    )
+
+    if user is None or not verify_password(
+        user_data.password,
+        user.hashed_password,
+    ):
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    access_token = create_access_token(
+        data={"sub": user.username}
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+    }
+
+
+@app.get(
+    "/auth/me",
+    response_model=UserResponse,
+    tags=["Authentication"],
+    summary="Get the currently authenticated user",
+)
+def get_me(
+    current_user: User = Depends(get_current_user),
+):
+    return current_user
+
+
+# ============================================================
 # ROOT
 # ============================================================
 
@@ -133,21 +253,28 @@ def health():
 
 # ============================================================
 # FARM APIs
-# ============================================================
 
 # CREATE FARM
-@app.post("/farms", response_model=FarmResponse)
+@app.post(
+    "/farms",
+    response_model=FarmResponse,
+    status_code=201,
+    tags=["Farms"],
+    summary="Create a farm for the authenticated user",
+)
 def create_farm(
     farm: FarmCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     new_farm = Farm(
+        user_id=current_user.id,
         farm_name=farm.farm_name,
         farm_size_acres=farm.farm_size_acres,
         state=farm.state,
         district=farm.district,
         latitude=farm.latitude,
-        longitude=farm.longitude
+        longitude=farm.longitude,
     )
 
     db.add(new_farm)
@@ -157,43 +284,83 @@ def create_farm(
     return new_farm
 
 
-# GET ALL FARMS
-@app.get("/farms", response_model=list[FarmResponse])
-def get_farms(db: Session = Depends(get_db)):
-    farms = db.query(Farm).all()
+# GET ALL FARMS FOR CURRENT USER
+@app.get(
+    "/farms",
+    response_model=list[FarmResponse],
+    tags=["Farms"],
+    summary="Get all farms owned by the authenticated user",
+)
+def get_farms(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    farms = (
+        db.query(Farm)
+        .filter(Farm.user_id == current_user.id)
+        .order_by(Farm.created_at.desc())
+        .all()
+    )
+
     return farms
 
 
 # GET FARM BY ID
-@app.get("/farms/{farm_id}", response_model=FarmResponse)
+@app.get(
+    "/farms/{farm_id}",
+    response_model=FarmResponse,
+    tags=["Farms"],
+    summary="Get one farm owned by the authenticated user",
+)
 def get_farm(
     farm_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     return farm
 
 
 # UPDATE FARM
-@app.put("/farms/{farm_id}", response_model=FarmResponse)
+@app.put(
+    "/farms/{farm_id}",
+    response_model=FarmResponse,
+    tags=["Farms"],
+    summary="Update a farm owned by the authenticated user",
+)
 def update_farm(
     farm_id: int,
     farm_data: FarmCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     farm.farm_name = farm_data.farm_name
@@ -210,17 +377,29 @@ def update_farm(
 
 
 # DELETE FARM
-@app.delete("/farms/{farm_id}")
+@app.delete(
+    "/farms/{farm_id}",
+    tags=["Farms"],
+    summary="Delete a farm owned by the authenticated user",
+)
 def delete_farm(
     farm_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     db.delete(farm)
@@ -228,11 +407,10 @@ def delete_farm(
 
     return {
         "message": "Farm deleted successfully",
-        "farm_id": farm_id
+        "farm_id": farm_id,
     }
 
 
-# ============================================================
 # SOIL PROFILE APIs
 # ============================================================
 
@@ -695,14 +873,22 @@ def delete_weather_record(
 def create_prediction(
     farm_id: int,
     prediction: PredictionCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     new_prediction = Prediction(
@@ -712,7 +898,7 @@ def create_prediction(
         disease_risk=prediction.disease_risk,
         climate_risk=prediction.climate_risk,
         crop_stress=prediction.crop_stress,
-        confidence=prediction.confidence
+        confidence=prediction.confidence,
     )
 
     db.add(new_prediction)
@@ -728,14 +914,22 @@ def create_prediction(
 )
 def get_predictions(
     farm_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     predictions = (
@@ -757,14 +951,22 @@ def get_predictions(
 def create_simulation(
     farm_id: int,
     simulation: SimulationCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     new_simulation = Simulation(
@@ -778,7 +980,7 @@ def create_simulation(
         predicted_yield=simulation.predicted_yield,
         estimated_profit=simulation.estimated_profit,
         water_used=simulation.water_used,
-        sustainability_score=simulation.sustainability_score
+        sustainability_score=simulation.sustainability_score,
     )
 
     db.add(new_simulation)
@@ -794,14 +996,22 @@ def create_simulation(
 )
 def get_simulations(
     farm_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     simulations = (
@@ -823,14 +1033,22 @@ def get_simulations(
 def create_recommendation(
     farm_id: int,
     recommendation: RecommendationCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     new_recommendation = Recommendation(
@@ -839,7 +1057,7 @@ def create_recommendation(
         recommendation=recommendation.recommendation,
         reason=recommendation.reason,
         expected_impact=recommendation.expected_impact,
-        confidence=recommendation.confidence
+        confidence=recommendation.confidence,
     )
 
     db.add(new_recommendation)
@@ -855,14 +1073,22 @@ def create_recommendation(
 )
 def get_recommendations(
     farm_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     recommendations = (
@@ -884,14 +1110,22 @@ def get_recommendations(
 def create_decision_feedback(
     farm_id: int,
     feedback: DecisionFeedbackCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     if feedback.recommendation_id is not None:
@@ -899,7 +1133,7 @@ def create_decision_feedback(
             db.query(Recommendation)
             .filter(
                 Recommendation.id == feedback.recommendation_id,
-                Recommendation.farm_id == farm_id
+                Recommendation.farm_id == farm_id,
             )
             .first()
         )
@@ -907,7 +1141,7 @@ def create_decision_feedback(
         if recommendation is None:
             raise HTTPException(
                 status_code=404,
-                detail="Recommendation not found for this farm"
+                detail="Recommendation not found for this farm",
             )
 
     new_feedback = DecisionFeedback(
@@ -917,7 +1151,7 @@ def create_decision_feedback(
         actual_yield=feedback.actual_yield,
         actual_water_used=feedback.actual_water_used,
         actual_profit=feedback.actual_profit,
-        notes=feedback.notes
+        notes=feedback.notes,
     )
 
     db.add(new_feedback)
@@ -933,14 +1167,22 @@ def create_decision_feedback(
 )
 def get_decision_feedback(
     farm_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    farm = db.query(Farm).filter(Farm.id == farm_id).first()
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
 
     if farm is None:
         raise HTTPException(
             status_code=404,
-            detail="Farm not found"
+            detail="Farm not found",
         )
 
     feedback = (
@@ -1592,3 +1834,573 @@ def decision_pipeline(
         max_temp_c=data.max_temp_c,
         min_temp_c=data.min_temp_c
     )
+
+# ============================================================
+# LIVE WEATHER API
+# ============================================================
+
+@app.get(
+    "/farms/{farm_id}/weather/live",
+    tags=["Live Data"],
+    summary="Get live weather for an owned farm",
+)
+def live_weather(
+    farm_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if farm is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Farm not found",
+        )
+
+    if farm.latitude is None or farm.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Farm latitude and longitude are required",
+        )
+
+    try:
+        return get_live_weather(
+            latitude=farm.latitude,
+            longitude=farm.longitude,
+        )
+    except ExternalDataError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Live weather service unavailable: {exc}",
+        ) from exc
+
+
+# ============================================================
+# LIVE SOIL API
+# ============================================================
+
+@app.get(
+    "/farms/{farm_id}/soil/live",
+    tags=["Live Data"],
+    summary="Get live soil data for an owned farm",
+)
+def live_soil(
+    farm_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if farm is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Farm not found",
+        )
+
+    if farm.latitude is None or farm.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Farm latitude and longitude are required",
+        )
+
+    try:
+        return get_soil_data(
+            latitude=farm.latitude,
+            longitude=farm.longitude,
+        )
+    except ExternalDataError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Live soil service unavailable: {exc}",
+        ) from exc
+
+
+# ============================================================
+# LIVE DECISION PIPELINE API
+# ============================================================
+
+class LiveDecisionPipelineRequest(BaseModel):
+    district_code: int = Field(..., ge=1)
+    state_code: int = Field(..., ge=1)
+    year: int = Field(..., ge=1900, le=2100)
+
+    district: str = Field(..., min_length=2, max_length=100)
+    state_name: str = Field(..., min_length=2, max_length=100)
+    area_1000_ha: float = Field(..., gt=0)
+
+    farm_size_acres: float = Field(..., gt=0)
+    previous_crop: str = Field(..., min_length=2, max_length=100)
+
+    nitrogen: float = Field(..., ge=0)
+    phosphorus: float = Field(..., ge=0)
+    potassium: float = Field(..., ge=0)
+
+    ph: float = Field(..., ge=0, le=14)
+    organic_matter: float = Field(..., ge=0)
+
+    available_water_liters: float = Field(..., ge=0)
+    irrigation_type: str = Field(..., min_length=2, max_length=100)
+
+    # Fallback values if live weather does not provide a measurement.
+    rainfall_mm: float = Field(..., ge=0)
+    avg_temp_c: float = Field(..., ge=-20, le=60)
+    max_temp_c: float = Field(..., ge=-20, le=70)
+    min_temp_c: float = Field(..., ge=-30, le=60)
+
+
+@app.post(
+    "/farms/{farm_id}/decision-pipeline/live",
+    tags=["Live Data"],
+    summary="Run the decision pipeline using live weather",
+)
+def live_decision_pipeline(
+    farm_id: int,
+    data: LiveDecisionPipelineRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if farm is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Farm not found",
+        )
+
+    if farm.latitude is None or farm.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Farm latitude and longitude are required",
+        )
+
+    try:
+        live_weather = get_live_weather(
+            latitude=farm.latitude,
+            longitude=farm.longitude,
+        )
+    except ExternalDataError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Live weather service unavailable: {exc}",
+        ) from exc
+
+    current = live_weather.get("current", {})
+    daily = live_weather.get("daily", {})
+
+    current_temperature = current.get("temperature_2m")
+    daily_max = daily.get("temperature_2m_max", [])
+    daily_min = daily.get("temperature_2m_min", [])
+    daily_rain = daily.get("precipitation_sum", [])
+
+    avg_temp_c = (
+        current_temperature
+        if current_temperature is not None
+        else data.avg_temp_c
+    )
+
+    max_temp_c = (
+        daily_max[0]
+        if daily_max and daily_max[0] is not None
+        else data.max_temp_c
+    )
+
+    min_temp_c = (
+        daily_min[0]
+        if daily_min and daily_min[0] is not None
+        else data.min_temp_c
+    )
+
+    rainfall_mm = (
+        daily_rain[0]
+        if daily_rain and daily_rain[0] is not None
+        else current.get("precipitation", data.rainfall_mm)
+    )
+
+    decision = run_decision_pipeline(
+        district_code=data.district_code,
+        state_code=data.state_code,
+        year=data.year,
+        district=data.district,
+        state_name=data.state_name,
+        area_1000_ha=data.area_1000_ha,
+        farm_size_acres=data.farm_size_acres,
+        previous_crop=data.previous_crop,
+        nitrogen=data.nitrogen,
+        phosphorus=data.phosphorus,
+        potassium=data.potassium,
+        ph=data.ph,
+        organic_matter=data.organic_matter,
+        available_water_liters=data.available_water_liters,
+        irrigation_type=data.irrigation_type,
+        rainfall_mm=rainfall_mm,
+        avg_temp_c=avg_temp_c,
+        max_temp_c=max_temp_c,
+        min_temp_c=min_temp_c,
+    )
+
+    return {
+        "farm": {
+            "id": farm.id,
+            "farm_name": farm.farm_name,
+            "latitude": farm.latitude,
+            "longitude": farm.longitude,
+        },
+        "live_weather": live_weather,
+        "used_for_pipeline": {
+            "rainfall_mm": rainfall_mm,
+            "avg_temp_c": avg_temp_c,
+            "max_temp_c": max_temp_c,
+            "min_temp_c": min_temp_c,
+        },
+        "decision": decision,
+    }
+
+
+# ============================================================
+# GENAI AGRICULTURAL ADVISOR
+# ============================================================
+
+class AIAgriculturalAdvisorRequest(BaseModel):
+    crop: str = Field(..., min_length=2, max_length=100)
+
+    predicted_yield_kg_per_ha: float
+
+    water_coverage_percent: float = Field(
+        ...,
+        ge=0,
+        le=100,
+    )
+
+    fertilizer_priority: str
+
+    sustainability_score: float
+
+    climate_risk: float
+
+    recommended_water_liters: float = 0.0
+
+    rainfall_mm: float | None = None
+
+    avg_temp_c: float | None = None
+
+    max_temp_c: float | None = None
+
+    min_temp_c: float | None = None
+
+    soil_ph: float | None = Field(
+        default=None,
+        ge=0,
+        le=14,
+    )
+
+    organic_matter: float | None = None
+
+    language: str = Field(
+        default="English",
+        min_length=2,
+        max_length=30,
+    )
+
+
+@app.post(
+    "/agricultural-advisor/ai",
+    tags=["GenAI"],
+    summary="Generate structured AI agricultural advice",
+)
+def ai_agricultural_advisor(
+    data: AIAgriculturalAdvisorRequest,
+):
+    try:
+        return generate_ai_advice(
+            crop=data.crop,
+            predicted_yield_kg_per_ha=data.predicted_yield_kg_per_ha,
+            water_coverage_percent=data.water_coverage_percent,
+            fertilizer_priority=data.fertilizer_priority,
+            sustainability_score=data.sustainability_score,
+            climate_risk=data.climate_risk,
+            recommended_water_liters=data.recommended_water_liters,
+            rainfall_mm=data.rainfall_mm,
+            avg_temp_c=data.avg_temp_c,
+            max_temp_c=data.max_temp_c,
+            min_temp_c=data.min_temp_c,
+            soil_ph=data.soil_ph,
+            organic_matter=data.organic_matter,
+            language=data.language,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="AI agricultural advisor is temporarily unavailable",
+        ) from exc
+
+
+# ============================================================
+# LIVE + GENAI AGRICULTURAL DECISION PIPELINE
+# ============================================================
+
+class LiveAIDecisionPipelineRequest(BaseModel):
+    district_code: int = Field(..., ge=1)
+    state_code: int = Field(..., ge=1)
+    year: int = Field(..., ge=1900, le=2100)
+
+    district: str = Field(..., min_length=2, max_length=100)
+    state_name: str = Field(..., min_length=2, max_length=100)
+    area_1000_ha: float = Field(..., gt=0)
+
+    farm_size_acres: float = Field(..., gt=0)
+    previous_crop: str = Field(..., min_length=2, max_length=100)
+
+    nitrogen: float = Field(..., ge=0)
+    phosphorus: float = Field(..., ge=0)
+    potassium: float = Field(..., ge=0)
+
+    ph: float = Field(..., ge=0, le=14)
+    organic_matter: float = Field(..., ge=0)
+
+    available_water_liters: float = Field(..., ge=0)
+    irrigation_type: str = Field(..., min_length=2, max_length=100)
+
+    # Fallback values if live weather does not provide a measurement.
+    rainfall_mm: float = Field(..., ge=0)
+    avg_temp_c: float = Field(..., ge=-20, le=60)
+    max_temp_c: float = Field(..., ge=-20, le=70)
+    min_temp_c: float = Field(..., ge=-30, le=60)
+
+    language: str = Field(
+        default="English",
+        min_length=2,
+        max_length=30,
+    )
+
+
+@app.post(
+    "/farms/{farm_id}/decision-pipeline/ai",
+    tags=["GenAI"],
+    summary="Run live weather decision pipeline and generate AI advice",
+)
+def live_ai_decision_pipeline(
+    farm_id: int,
+    data: LiveAIDecisionPipelineRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    # --------------------------------------------------------
+    # 1. Verify farm ownership
+    # --------------------------------------------------------
+    farm = (
+        db.query(Farm)
+        .filter(
+            Farm.id == farm_id,
+            Farm.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if farm is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Farm not found",
+        )
+
+    # --------------------------------------------------------
+    # 2. Validate farm coordinates
+    # --------------------------------------------------------
+    if farm.latitude is None or farm.longitude is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Farm latitude and longitude are required",
+        )
+
+    # --------------------------------------------------------
+    # 3. Fetch live weather
+    # --------------------------------------------------------
+    try:
+        live_weather = get_live_weather(
+            latitude=farm.latitude,
+            longitude=farm.longitude,
+        )
+    except ExternalDataError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Live weather service unavailable: {exc}",
+        ) from exc
+
+    # --------------------------------------------------------
+    # 4. Extract live weather values
+    # --------------------------------------------------------
+    current = live_weather.get("current", {})
+    daily = live_weather.get("daily", {})
+
+    current_temperature = current.get("temperature_2m")
+    daily_max = daily.get("temperature_2m_max", [])
+    daily_min = daily.get("temperature_2m_min", [])
+    daily_rain = daily.get("precipitation_sum", [])
+
+    avg_temp_c = (
+        current_temperature
+        if current_temperature is not None
+        else data.avg_temp_c
+    )
+
+    max_temp_c = (
+        daily_max[0]
+        if daily_max and daily_max[0] is not None
+        else data.max_temp_c
+    )
+
+    min_temp_c = (
+        daily_min[0]
+        if daily_min and daily_min[0] is not None
+        else data.min_temp_c
+    )
+
+    rainfall_mm = (
+        daily_rain[0]
+        if daily_rain and daily_rain[0] is not None
+        else current.get("precipitation", data.rainfall_mm)
+    )
+
+    # --------------------------------------------------------
+    # 5. Run existing AgriTwin decision engine
+    # --------------------------------------------------------
+    decision = run_decision_pipeline(
+        district_code=data.district_code,
+        state_code=data.state_code,
+        year=data.year,
+        district=data.district,
+        state_name=data.state_name,
+        area_1000_ha=data.area_1000_ha,
+        farm_size_acres=data.farm_size_acres,
+        previous_crop=data.previous_crop,
+        nitrogen=data.nitrogen,
+        phosphorus=data.phosphorus,
+        potassium=data.potassium,
+        ph=data.ph,
+        organic_matter=data.organic_matter,
+        available_water_liters=data.available_water_liters,
+        irrigation_type=data.irrigation_type,
+        rainfall_mm=rainfall_mm,
+        avg_temp_c=avg_temp_c,
+        max_temp_c=max_temp_c,
+        min_temp_c=min_temp_c,
+    )
+
+    # --------------------------------------------------------
+    # 6. Extract structured decision values for GenAI
+    # --------------------------------------------------------
+    try:
+        recommended_crop = decision[
+            "recommended_crop"
+        ]["crop"]
+
+        predicted_yield = decision[
+            "recommended_crop"
+        ]["predicted_yield_kg_per_ha"]
+
+        water_coverage = decision[
+            "water_analysis"
+        ]["water_coverage_percent"]
+
+        fertilizer_priority = decision[
+            "fertilizer_analysis"
+        ]["fertilizer_priority"]
+
+        sustainability_score = decision[
+            "sustainability"
+        ]["sustainability_score"]
+
+        climate_risk = decision[
+            "climate_analysis"
+        ]["climate_risk"]
+
+        recommended_water = (
+            decision
+            .get("advisor", {})
+            .get(
+                "recommended_water_liters",
+                data.available_water_liters,
+            )
+        )
+    except (KeyError, TypeError) as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Decision pipeline returned an unexpected response structure",
+        ) from exc
+
+    # --------------------------------------------------------
+    # 7. Generate GenAI explanation
+    # --------------------------------------------------------
+    try:
+        ai_advice = generate_ai_advice(
+            crop=recommended_crop,
+            predicted_yield_kg_per_ha=predicted_yield,
+            water_coverage_percent=water_coverage,
+            fertilizer_priority=fertilizer_priority,
+            sustainability_score=sustainability_score,
+            climate_risk=climate_risk,
+            recommended_water_liters=recommended_water,
+            rainfall_mm=rainfall_mm,
+            avg_temp_c=avg_temp_c,
+            max_temp_c=max_temp_c,
+            min_temp_c=min_temp_c,
+            soil_ph=data.ph,
+            organic_matter=data.organic_matter,
+            language=data.language,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="AI agricultural advisor is temporarily unavailable",
+        ) from exc
+
+    # --------------------------------------------------------
+    # 8. Return complete decision package
+    # --------------------------------------------------------
+    return {
+        "farm": {
+            "id": farm.id,
+            "farm_name": farm.farm_name,
+            "latitude": farm.latitude,
+            "longitude": farm.longitude,
+        },
+        "live_weather": live_weather,
+        "used_for_pipeline": {
+            "rainfall_mm": rainfall_mm,
+            "avg_temp_c": avg_temp_c,
+            "max_temp_c": max_temp_c,
+            "min_temp_c": min_temp_c,
+        },
+        "decision": decision,
+        "ai_advice": ai_advice,
+    }

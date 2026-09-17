@@ -16,6 +16,9 @@ jobs:
       run:
         working-directory: backend
 
+    env:
+      JWT_SECRET_KEY: test-secret-for-ci-only
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
