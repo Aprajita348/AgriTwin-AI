@@ -126,6 +126,134 @@ class YieldPredictionRequest(BaseModel):
 yield_model = joblib.load(MODEL_PATH)
 
 
+def build_rule_based_ai_fallback(
+    *,
+    crop,
+    predicted_yield_kg_per_ha,
+    water_coverage_percent,
+    fertilizer_priority,
+    sustainability_score,
+    climate_risk,
+    recommended_water_liters,
+    rainfall_mm=None,
+    avg_temp_c=None,
+    max_temp_c=None,
+    min_temp_c=None,
+    soil_ph=None,
+    organic_matter=None,
+    language="English",
+    reason="The Gemini AI provider is temporarily unavailable.",
+):
+    warnings = [reason]
+
+    if climate_risk is not None and float(climate_risk) >= 60:
+        warnings.append(
+            "Climate risk is elevated; review weather conditions before taking action."
+        )
+
+    if water_coverage_percent is not None and float(water_coverage_percent) < 70:
+        warnings.append(
+            "Available water may not fully cover the estimated requirement."
+        )
+
+    if fertilizer_priority == "High":
+        fertilizer_message = (
+            "Nutrient availability indicates high fertilizer priority; "
+            "verify soil conditions before application."
+        )
+    elif fertilizer_priority == "Moderate":
+        fertilizer_message = (
+            "Nutrient availability indicates moderate fertilizer priority; "
+            "use a balanced application plan."
+        )
+    else:
+        fertilizer_message = (
+            "Current nutrient inputs indicate low fertilizer priority."
+        )
+
+    reasons = [
+        f"The decision engine selected {crop} based on the supplied farm conditions.",
+        f"Predicted yield is {round(float(predicted_yield_kg_per_ha), 2)} kg/ha.",
+        f"Water coverage is {round(float(water_coverage_percent), 2)}%.",
+        fertilizer_message,
+    ]
+
+    if rainfall_mm is not None:
+        reasons.append(
+            f"Rainfall input used for this decision: {round(float(rainfall_mm), 2)} mm."
+        )
+
+    if avg_temp_c is not None:
+        reasons.append(
+            f"Average/current temperature input: {round(float(avg_temp_c), 2)} °C."
+        )
+
+    recommendation = (
+        f"Continue with {crop} as the current model recommendation. "
+        f"Plan approximately {round(float(recommended_water_liters), 2)} liters "
+        f"of available irrigation water according to the farm's actual conditions "
+        "and verify soil and weather conditions before implementation."
+    )
+
+    expected_impact = [
+        f"Expected yield from the current model: {round(float(predicted_yield_kg_per_ha), 2)} kg/ha.",
+        f"Sustainability score: {round(float(sustainability_score), 2)}/100.",
+        f"Climate-risk score: {round(float(climate_risk), 2)}.",
+        f"Recommended water planning value: {round(float(recommended_water_liters), 2)} liters.",
+    ]
+
+    next_steps = [
+        "Review the live weather and farm inputs before taking action.",
+        "Use the What-If simulator to compare irrigation, fertilizer and crop scenarios.",
+        "Re-run the decision when weather or resource conditions change.",
+    ]
+
+    return {
+        "provider": "Rule-based fallback",
+        "summary": "Decision generated successfully with a deterministic fallback advisor.",
+        "recommendation": recommendation,
+        "reasons": reasons,
+        "expected_impact": expected_impact,
+        "warnings": warnings,
+        "next_steps": next_steps,
+        "confidence": None,
+        "language": language,
+        "inputs": {
+            "crop": crop,
+            "predicted_yield_kg_per_ha": round(float(predicted_yield_kg_per_ha), 2),
+            "water_coverage_percent": round(float(water_coverage_percent), 2),
+            "fertilizer_priority": fertilizer_priority,
+            "sustainability_score": round(float(sustainability_score), 2),
+            "climate_risk": round(float(climate_risk), 2),
+            "recommended_water_liters": round(float(recommended_water_liters), 2),
+            "rainfall_mm": rainfall_mm,
+            "avg_temp_c": avg_temp_c,
+            "max_temp_c": max_temp_c,
+            "min_temp_c": min_temp_c,
+            "soil_ph": soil_ph,
+            "organic_matter": organic_matter,
+        },
+    }
+
+
+def generate_ai_advice_with_fallback(**kwargs):
+    try:
+        ai_advice = generate_ai_advice(**kwargs)
+
+        if isinstance(ai_advice, dict):
+            return {
+                **ai_advice,
+                "provider": ai_advice.get("provider", "Gemini"),
+            }
+
+        return ai_advice
+    except Exception as exc:
+        return build_rule_based_ai_fallback(
+            **kwargs,
+            reason=f"Gemini AI provider unavailable: {exc}",
+        )
+
+
 # ============================================================
 # AUTHENTICATION APIs
 # ============================================================
@@ -2131,33 +2259,22 @@ class AIAgriculturalAdvisorRequest(BaseModel):
 def ai_agricultural_advisor(
     data: AIAgriculturalAdvisorRequest,
 ):
-    try:
-        return generate_ai_advice(
-            crop=data.crop,
-            predicted_yield_kg_per_ha=data.predicted_yield_kg_per_ha,
-            water_coverage_percent=data.water_coverage_percent,
-            fertilizer_priority=data.fertilizer_priority,
-            sustainability_score=data.sustainability_score,
-            climate_risk=data.climate_risk,
-            recommended_water_liters=data.recommended_water_liters,
-            rainfall_mm=data.rainfall_mm,
-            avg_temp_c=data.avg_temp_c,
-            max_temp_c=data.max_temp_c,
-            min_temp_c=data.min_temp_c,
-            soil_ph=data.soil_ph,
-            organic_matter=data.organic_matter,
-            language=data.language,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="AI agricultural advisor is temporarily unavailable",
-        ) from exc
+    return generate_ai_advice_with_fallback(
+        crop=data.crop,
+        predicted_yield_kg_per_ha=data.predicted_yield_kg_per_ha,
+        water_coverage_percent=data.water_coverage_percent,
+        fertilizer_priority=data.fertilizer_priority,
+        sustainability_score=data.sustainability_score,
+        climate_risk=data.climate_risk,
+        recommended_water_liters=data.recommended_water_liters,
+        rainfall_mm=data.rainfall_mm,
+        avg_temp_c=data.avg_temp_c,
+        max_temp_c=data.max_temp_c,
+        min_temp_c=data.min_temp_c,
+        soil_ph=data.soil_ph,
+        organic_matter=data.organic_matter,
+        language=data.language,
+    )
 
 
 # ============================================================
@@ -2356,33 +2473,22 @@ def live_ai_decision_pipeline(
     # --------------------------------------------------------
     # 7. Generate GenAI explanation
     # --------------------------------------------------------
-    try:
-        ai_advice = generate_ai_advice(
-            crop=recommended_crop,
-            predicted_yield_kg_per_ha=predicted_yield,
-            water_coverage_percent=water_coverage,
-            fertilizer_priority=fertilizer_priority,
-            sustainability_score=sustainability_score,
-            climate_risk=climate_risk,
-            recommended_water_liters=recommended_water,
-            rainfall_mm=rainfall_mm,
-            avg_temp_c=avg_temp_c,
-            max_temp_c=max_temp_c,
-            min_temp_c=min_temp_c,
-            soil_ph=data.ph,
-            organic_matter=data.organic_matter,
-            language=data.language,
-        )
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=503,
-            detail=str(exc),
-        ) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=503,
-            detail="AI agricultural advisor is temporarily unavailable",
-        ) from exc
+    ai_advice = generate_ai_advice_with_fallback(
+        crop=recommended_crop,
+        predicted_yield_kg_per_ha=predicted_yield,
+        water_coverage_percent=water_coverage,
+        fertilizer_priority=fertilizer_priority,
+        sustainability_score=sustainability_score,
+        climate_risk=climate_risk,
+        recommended_water_liters=recommended_water,
+        rainfall_mm=rainfall_mm,
+        avg_temp_c=avg_temp_c,
+        max_temp_c=max_temp_c,
+        min_temp_c=min_temp_c,
+        soil_ph=data.ph,
+        organic_matter=data.organic_matter,
+        language=data.language,
+    )
 
     # --------------------------------------------------------
     # 8. Return complete decision package

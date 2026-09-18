@@ -9,8 +9,12 @@ from app.external_data import ExternalDataError
 client = TestClient(main_module.app)
 
 
-def register_and_login(username_prefix: str, password: str = "TestPass123"):
+def register_and_login(
+    username_prefix: str,
+    password: str = "TestPass123",
+):
     unique_id = uuid.uuid4().hex[:8]
+
     username = f"{username_prefix}_{unique_id}"
     email = f"{username}@example.com"
 
@@ -24,7 +28,8 @@ def register_and_login(username_prefix: str, password: str = "TestPass123"):
     )
 
     assert register_response.status_code in [200, 201], (
-        f"Registration failed: {register_response.status_code} - "
+        f"Registration failed: "
+        f"{register_response.status_code} - "
         f"{register_response.text}"
     )
 
@@ -37,15 +42,22 @@ def register_and_login(username_prefix: str, password: str = "TestPass123"):
     )
 
     assert login_response.status_code == 200, (
-        f"Login failed: {login_response.status_code} - "
+        f"Login failed: "
+        f"{login_response.status_code} - "
         f"{login_response.text}"
     )
 
     token = login_response.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+
+    return {
+        "Authorization": f"Bearer {token}"
+    }
 
 
-def create_farm(headers, name="Live Data Test Farm"):
+def create_farm(
+    headers,
+    name="Live Data Test Farm",
+):
     response = client.post(
         "/farms",
         json={
@@ -60,7 +72,8 @@ def create_farm(headers, name="Live Data Test Farm"):
     )
 
     assert response.status_code in [200, 201], (
-        f"Farm creation failed: {response.status_code} - "
+        f"Farm creation failed: "
+        f"{response.status_code} - "
         f"{response.text}"
     )
 
@@ -116,28 +129,61 @@ def sample_decision():
 
 def sample_ai_advice():
     return {
-        "summary": "Current conditions are manageable for the recommended crop.",
-        "recommendation": "Monitor water and nutrient conditions closely.",
-        "reasons": ["Water coverage is adequate."],
-        "expected_impact": ["Supports stable crop development."],
-        "warnings": ["Model outputs are estimates."],
-        "next_steps": ["Continue monitoring weather and soil conditions."],
+        "summary": (
+            "Current conditions are manageable "
+            "for the recommended crop."
+        ),
+        "recommendation": (
+            "Monitor water and nutrient conditions closely."
+        ),
+        "reasons": [
+            "Water coverage is adequate."
+        ],
+        "expected_impact": [
+            "Supports stable crop development."
+        ],
+        "warnings": [
+            "Model outputs are estimates."
+        ],
+        "next_steps": [
+            "Continue monitoring weather and soil conditions."
+        ],
         "language": "English",
     }
 
 
-def test_live_weather_returns_mocked_provider_data(monkeypatch):
+# ============================================================
+# LIVE WEATHER
+# ============================================================
+
+
+def test_live_weather_returns_mocked_provider_data(
+    monkeypatch,
+):
     headers = register_and_login("live_weather")
     farm_id = create_farm(headers)
 
     expected_weather = sample_live_weather()
     calls = []
 
-    def fake_get_live_weather(latitude, longitude):
-        calls.append((latitude, longitude))
+    def fake_get_live_weather(
+        latitude,
+        longitude,
+    ):
+        calls.append(
+            (
+                latitude,
+                longitude,
+            )
+        )
+
         return expected_weather
 
-    monkeypatch.setattr(main_module, "get_live_weather", fake_get_live_weather)
+    monkeypatch.setattr(
+        main_module,
+        "get_live_weather",
+        fake_get_live_weather,
+    )
 
     response = client.get(
         f"/farms/{farm_id}/weather/live",
@@ -145,18 +191,39 @@ def test_live_weather_returns_mocked_provider_data(monkeypatch):
     )
 
     assert response.status_code == 200
+
     assert response.json() == expected_weather
-    assert calls == [(29.2183, 79.5130)]
+
+    assert calls == [
+        (
+            29.2183,
+            79.5130,
+        )
+    ]
 
 
-def test_live_weather_returns_503_when_provider_fails(monkeypatch):
-    headers = register_and_login("live_weather_error")
+def test_live_weather_returns_503_when_provider_fails(
+    monkeypatch,
+):
+    headers = register_and_login(
+        "live_weather_error"
+    )
+
     farm_id = create_farm(headers)
 
-    def fake_get_live_weather(latitude, longitude):
-        raise ExternalDataError("provider unavailable")
+    def fake_get_live_weather(
+        latitude,
+        longitude,
+    ):
+        raise ExternalDataError(
+            "provider unavailable"
+        )
 
-    monkeypatch.setattr(main_module, "get_live_weather", fake_get_live_weather)
+    monkeypatch.setattr(
+        main_module,
+        "get_live_weather",
+        fake_get_live_weather,
+    )
 
     response = client.get(
         f"/farms/{farm_id}/weather/live",
@@ -164,11 +231,23 @@ def test_live_weather_returns_503_when_provider_fails(monkeypatch):
     )
 
     assert response.status_code == 503
-    assert "Live weather service unavailable" in response.json()["detail"]
+
+    assert (
+        "Live weather service unavailable"
+        in response.json()["detail"]
+    )
 
 
-def test_live_soil_returns_mocked_provider_data(monkeypatch):
+# ============================================================
+# LIVE SOIL
+# ============================================================
+
+
+def test_live_soil_returns_mocked_provider_data(
+    monkeypatch,
+):
     headers = register_and_login("live_soil")
+
     farm_id = create_farm(headers)
 
     expected_soil = {
@@ -176,17 +255,32 @@ def test_live_soil_returns_mocked_provider_data(monkeypatch):
         "latitude": 29.2183,
         "longitude": 79.5130,
         "properties": {
-            "phh2o": {"mean": 68.0},
-            "nitrogen": {"mean": 1.8},
-            "soc": {"mean": 12.0},
-            "clay": {"mean": 220.0},
+            "phh2o": {
+                "mean": 68.0
+            },
+            "nitrogen": {
+                "mean": 1.8
+            },
+            "soc": {
+                "mean": 12.0
+            },
+            "clay": {
+                "mean": 220.0
+            },
         },
     }
 
-    def fake_get_soil_data(latitude, longitude):
+    def fake_get_soil_data(
+        latitude,
+        longitude,
+    ):
         return expected_soil
 
-    monkeypatch.setattr(main_module, "get_soil_data", fake_get_soil_data)
+    monkeypatch.setattr(
+        main_module,
+        "get_soil_data",
+        fake_get_soil_data,
+    )
 
     response = client.get(
         f"/farms/{farm_id}/soil/live",
@@ -194,25 +288,41 @@ def test_live_soil_returns_mocked_provider_data(monkeypatch):
     )
 
     assert response.status_code == 200
+
     assert response.json() == expected_soil
 
 
-def test_live_decision_pipeline_uses_live_weather(monkeypatch):
-    headers = register_and_login("live_decision")
+# ============================================================
+# LIVE DECISION PIPELINE
+# ============================================================
+
+
+def test_live_decision_pipeline_uses_live_weather(
+    monkeypatch,
+):
+    headers = register_and_login(
+        "live_decision"
+    )
+
     farm_id = create_farm(headers)
 
     expected_weather = sample_live_weather()
     expected_decision = sample_decision()
+
     pipeline_calls = []
 
     monkeypatch.setattr(
         main_module,
         "get_live_weather",
-        lambda latitude, longitude: expected_weather,
+        lambda latitude, longitude:
+            expected_weather,
     )
 
-    def fake_run_decision_pipeline(**kwargs):
+    def fake_run_decision_pipeline(
+        **kwargs,
+    ):
         pipeline_calls.append(kwargs)
+
         return expected_decision
 
     monkeypatch.setattr(
@@ -252,7 +362,9 @@ def test_live_decision_pipeline_uses_live_weather(monkeypatch):
     assert response.status_code == 200
 
     body = response.json()
+
     assert body["decision"] == expected_decision
+
     assert body["used_for_pipeline"] == {
         "rainfall_mm": 8.0,
         "avg_temp_c": 22.5,
@@ -261,18 +373,29 @@ def test_live_decision_pipeline_uses_live_weather(monkeypatch):
     }
 
     assert len(pipeline_calls) == 1
+
     assert pipeline_calls[0]["rainfall_mm"] == 8.0
     assert pipeline_calls[0]["avg_temp_c"] == 22.5
     assert pipeline_calls[0]["max_temp_c"] == 29.0
     assert pipeline_calls[0]["min_temp_c"] == 15.0
 
 
-def test_ai_advisor_returns_mocked_structured_advice(monkeypatch):
+# ============================================================
+# AI ADVISOR - GEMINI SUCCESS
+# ============================================================
+
+
+def test_ai_advisor_returns_mocked_structured_advice(
+    monkeypatch,
+):
     expected_advice = sample_ai_advice()
     calls = []
 
-    def fake_generate_ai_advice(**kwargs):
+    def fake_generate_ai_advice(
+        **kwargs,
+    ):
         calls.append(kwargs)
+
         return expected_advice
 
     monkeypatch.setattr(
@@ -304,15 +427,44 @@ def test_ai_advisor_returns_mocked_structured_advice(monkeypatch):
     )
 
     assert response.status_code == 200
-    assert response.json() == expected_advice
+
+    body = response.json()
+
+    # Main.py now adds provider metadata
+    # to successful Gemini responses.
+    expected_response = {
+        **expected_advice,
+        "provider": "Gemini",
+    }
+
+    assert body == expected_response
+
     assert calls[0]["crop"] == "PIGEONPEA"
-    assert calls[0]["predicted_yield_kg_per_ha"] == 1120.47
+
+    assert (
+        calls[0]["predicted_yield_kg_per_ha"]
+        == 1120.47
+    )
+
     assert calls[0]["language"] == "English"
 
 
-def test_ai_advisor_returns_503_when_provider_fails(monkeypatch):
-    def fake_generate_ai_advice(**kwargs):
-        raise RuntimeError("GEMINI_API_KEY is not configured")
+# ============================================================
+# AI ADVISOR - GEMINI FAILURE
+# NEW BEHAVIOUR:
+# return 200 + deterministic fallback
+# ============================================================
+
+
+def test_ai_advisor_returns_fallback_when_provider_fails(
+    monkeypatch,
+):
+    def fake_generate_ai_advice(
+        **kwargs,
+    ):
+        raise RuntimeError(
+            "GEMINI_API_KEY is not configured"
+        )
 
     monkeypatch.setattr(
         main_module,
@@ -332,32 +484,71 @@ def test_ai_advisor_returns_503_when_provider_fails(monkeypatch):
         },
     )
 
-    assert response.status_code == 503
-    assert "GEMINI_API_KEY is not configured" in response.json()["detail"]
+    # Gemini failure must not break
+    # the agricultural advisor endpoint.
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["provider"] == "Rule-based fallback"
+
+    assert (
+        body["summary"]
+        == "Decision generated successfully "
+        "with a deterministic fallback advisor."
+    )
+
+    assert (
+        "GEMINI_API_KEY is not configured"
+        in " ".join(body["warnings"])
+    )
+
+    assert body["language"] == "English"
+
+    assert len(body["reasons"]) >= 3
+    assert len(body["expected_impact"]) >= 3
+    assert len(body["next_steps"]) >= 2
 
 
-def test_live_ai_pipeline_connects_weather_decision_and_ai(monkeypatch):
-    headers = register_and_login("live_ai_pipeline")
+# ============================================================
+# LIVE + GENAI PIPELINE
+# ============================================================
+
+
+def test_live_ai_pipeline_connects_weather_decision_and_ai(
+    monkeypatch,
+):
+    headers = register_and_login(
+        "live_ai_pipeline"
+    )
+
     farm_id = create_farm(headers)
 
     expected_weather = sample_live_weather()
     expected_decision = sample_decision()
     expected_advice = sample_ai_advice()
+
     ai_calls = []
 
     monkeypatch.setattr(
         main_module,
         "get_live_weather",
-        lambda latitude, longitude: expected_weather,
+        lambda latitude, longitude:
+            expected_weather,
     )
+
     monkeypatch.setattr(
         main_module,
         "run_decision_pipeline",
-        lambda **kwargs: expected_decision,
+        lambda **kwargs:
+            expected_decision,
     )
 
-    def fake_generate_ai_advice(**kwargs):
+    def fake_generate_ai_advice(
+        **kwargs,
+    ):
         ai_calls.append(kwargs)
+
         return expected_advice
 
     monkeypatch.setattr(
@@ -398,9 +589,25 @@ def test_live_ai_pipeline_connects_weather_decision_and_ai(monkeypatch):
     assert response.status_code == 200
 
     body = response.json()
-    assert body["live_weather"] == expected_weather
-    assert body["decision"] == expected_decision
-    assert body["ai_advice"] == expected_advice
+
+    assert (
+        body["live_weather"]
+        == expected_weather
+    )
+
+    assert (
+        body["decision"]
+        == expected_decision
+    )
+
+    assert (
+        body["ai_advice"]
+        == {
+            **expected_advice,
+            "provider": "Gemini",
+        }
+    )
+
     assert body["used_for_pipeline"] == {
         "rainfall_mm": 8.0,
         "avg_temp_c": 22.5,
@@ -409,12 +616,139 @@ def test_live_ai_pipeline_connects_weather_decision_and_ai(monkeypatch):
     }
 
     assert len(ai_calls) == 1
-    assert ai_calls[0]["crop"] == "PIGEONPEA"
-    assert ai_calls[0]["predicted_yield_kg_per_ha"] == 1120.47
-    assert ai_calls[0]["water_coverage_percent"] == 91.84
-    assert ai_calls[0]["fertilizer_priority"] == "Moderate"
-    assert ai_calls[0]["sustainability_score"] == 85.46
-    assert ai_calls[0]["climate_risk"] == 21.15
-    assert ai_calls[0]["recommended_water_liters"] == 45000
+
+    assert (
+        ai_calls[0]["crop"]
+        == "PIGEONPEA"
+    )
+
+    assert (
+        ai_calls[0]["predicted_yield_kg_per_ha"]
+        == 1120.47
+    )
+
+    assert (
+        ai_calls[0]["water_coverage_percent"]
+        == 91.84
+    )
+
+    assert (
+        ai_calls[0]["fertilizer_priority"]
+        == "Moderate"
+    )
+
+    assert (
+        ai_calls[0]["sustainability_score"]
+        == 85.46
+    )
+
+    assert (
+        ai_calls[0]["climate_risk"]
+        == 21.15
+    )
+
+    assert (
+        ai_calls[0]["recommended_water_liters"]
+        == 45000
+    )
+
     assert ai_calls[0]["soil_ph"] == 6.8
-    assert ai_calls[0]["organic_matter"] == 1.8
+
+    assert (
+        ai_calls[0]["organic_matter"]
+        == 1.8
+    )
+
+
+# ============================================================
+# LIVE + GENAI PIPELINE - AI FALLBACK
+# ============================================================
+
+
+def test_live_ai_pipeline_returns_decision_when_ai_fails(
+    monkeypatch,
+):
+    headers = register_and_login(
+        "live_ai_fallback"
+    )
+
+    farm_id = create_farm(headers)
+
+    expected_weather = sample_live_weather()
+    expected_decision = sample_decision()
+
+    monkeypatch.setattr(
+        main_module,
+        "get_live_weather",
+        lambda latitude, longitude:
+            expected_weather,
+    )
+
+    monkeypatch.setattr(
+        main_module,
+        "run_decision_pipeline",
+        lambda **kwargs:
+            expected_decision,
+    )
+
+    def fake_generate_ai_advice(
+        **kwargs,
+    ):
+        raise RuntimeError(
+            "GEMINI_API_KEY is not configured"
+        )
+
+    monkeypatch.setattr(
+        main_module,
+        "generate_ai_advice",
+        fake_generate_ai_advice,
+    )
+
+    payload = {
+        "district_code": 800,
+        "state_code": 13,
+        "year": 2026,
+        "district": "Nainital",
+        "state_name": "Uttarakhand",
+        "area_1000_ha": 24.0,
+        "farm_size_acres": 5.0,
+        "previous_crop": "RICE",
+        "nitrogen": 80,
+        "phosphorus": 40,
+        "potassium": 30,
+        "ph": 6.8,
+        "organic_matter": 1.8,
+        "available_water_liters": 45000,
+        "irrigation_type": "Drip",
+        "rainfall_mm": 620,
+        "avg_temp_c": 21.5,
+        "max_temp_c": 29.0,
+        "min_temp_c": 14.0,
+        "language": "English",
+    }
+
+    response = client.post(
+        f"/farms/{farm_id}/decision-pipeline/ai",
+        json=payload,
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["live_weather"] == expected_weather
+
+    assert body["decision"] == expected_decision
+
+    assert (
+        body["ai_advice"]["provider"]
+        == "Rule-based fallback"
+    )
+
+    assert (
+        "GEMINI_API_KEY is not configured"
+        in " ".join(
+            body["ai_advice"]["warnings"]
+        )
+    )

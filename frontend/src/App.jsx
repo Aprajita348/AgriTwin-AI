@@ -5,6 +5,7 @@ import FarmInsights from "./FarmInsights";
 import DecisionHistory, {
   saveDecisionToHistory,
 } from "./DecisionHistory";
+import LiveIntelligence from "./LiveIntelligence";
 
 const initialFormData = {
   district_code: 63,
@@ -140,6 +141,15 @@ function App() {
             />
 
             <NavButton
+              active={activeView === "live"}
+              onClick={() =>
+                setActiveView("live")
+              }
+              label="Live Intelligence"
+              activeClass="bg-[#F6E7A1]"
+            />
+
+            <NavButton
               active={activeView === "what-if"}
               onClick={() =>
                 setActiveView("what-if")
@@ -181,6 +191,18 @@ function App() {
       ===================================================== */}
 
       <main className="mx-auto max-w-7xl px-6 py-10">
+
+        {/* ==================================================
+            LIVE INTELLIGENCE PAGE
+        =================================================== */}
+
+        {activeView === "live" && (
+          <LiveIntelligence
+            result={result}
+            formData={formData}
+          />
+        )}
+
 
         {/* ==================================================
             WHAT-IF PAGE

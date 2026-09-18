@@ -33,6 +33,3 @@ frontend/.vite/
 # OS
 .DS_Store
 Thumbs.db
-.coverage
-coverage.xml
-htmlcov/
