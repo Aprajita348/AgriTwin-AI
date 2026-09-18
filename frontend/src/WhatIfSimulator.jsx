@@ -8,140 +8,113 @@ function WhatIfSimulator({ result, formData }) {
   const [fertilizerChange, setFertilizerChange] = useState(0);
 
   const [simulation, setSimulation] = useState(null);
-
   const [loading, setLoading] = useState(false);
-
   const [error, setError] = useState("");
 
   async function handleSimulation() {
     if (!result) {
-      setError(
-        "Run AI Farm Analysis first so AgriTwin has a baseline."
-      );
+      setError("Run AI Farm Analysis first to create a baseline.");
       return;
     }
 
     setLoading(true);
     setError("");
+    setSimulation(null);
 
     try {
       const data = await runWhatIfSimulation({
         crop: result.recommended_crop.crop,
-
-        farm_size_acres:
-          formData.farm_size_acres,
-
+        farm_size_acres: formData.farm_size_acres,
         baseline_yield_kg_per_ha:
-          result.recommended_crop
-            .predicted_yield_kg_per_ha,
-
+          result.recommended_crop.predicted_yield_kg_per_ha,
         baseline_profit:
-          result.recommended_crop
-            .estimated_profit,
-
+          result.recommended_crop.estimated_profit,
         baseline_water_liters:
-          result.water_analysis
-            .available_water_liters,
-
+          result.water_analysis.available_water_liters,
         baseline_sustainability_score:
-          result.sustainability
-            .sustainability_score,
-
-        avg_temp_c:
-          formData.avg_temp_c,
-
-        rainfall_mm:
-          formData.rainfall_mm,
-
-        temperature_change:
-          temperatureChange,
-
-        rainfall_change_percent:
-          rainfallChange,
-
-        irrigation_change_percent:
-          irrigationChange,
-
-        fertilizer_change_percent:
-          fertilizerChange,
+          result.sustainability.sustainability_score,
+        avg_temp_c: formData.avg_temp_c,
+        rainfall_mm: formData.rainfall_mm,
+        temperature_change: temperatureChange,
+        rainfall_change_percent: rainfallChange,
+        irrigation_change_percent: irrigationChange,
+        fertilizer_change_percent: fertilizerChange,
       });
 
       setSimulation(data);
-
     } catch (err) {
-
       console.error(err);
-
       setError(
-        "Could not run the simulation. Make sure the backend is running."
+        err?.message ||
+          "Could not run the simulation. Make sure the backend is running."
       );
-
     } finally {
-
       setLoading(false);
-
     }
+  }
+
+  function resetScenario() {
+    setTemperatureChange(2);
+    setRainfallChange(-20);
+    setIrrigationChange(10);
+    setFertilizerChange(0);
+    setSimulation(null);
+    setError("");
   }
 
   return (
     <section>
-
-      {/* =====================================================
-          HERO
-      ====================================================== */}
-
+      {/* HERO */}
       <div className="mb-8">
-
-        <span className="rounded-full bg-[#A8DADC] px-3 py-1 text-xs font-semibold">
-          Digital Farm Simulator
+        <span className="rounded-full bg-[#A8DADC] px-3 py-1 text-xs font-semibold text-[#263A32]">
+          DIGITAL FARM SIMULATOR
         </span>
 
-        <h2 className="mt-4 text-4xl font-bold tracking-tight md:text-5xl">
-          What happens if you change the decision? 🌱
+        <h2 className="mt-4 text-4xl font-bold tracking-tight text-[#263A32] md:text-5xl">
+          What happens if you change the decision?
         </h2>
 
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-[#64746D]">
-          Test a farming decision virtually before taking it to the
-          field. Compare the scenario against your current baseline.
+        <p className="mt-3 max-w-3xl text-sm leading-7 text-[#64746D] md:text-base">
+          Test a farming decision virtually before applying it in the field.
+          Compare your scenario against the current farm baseline.
         </p>
-
       </div>
 
-
-      {/* =====================================================
-          NO BASELINE WARNING
-      ====================================================== */}
-
+      {/* NO BASELINE */}
       {!result && (
-        <div className="mb-6 rounded-3xl bg-[#F6E7A1] p-5 text-sm font-medium">
-          Run AI Farm Analysis first to create your baseline farm
-          condition.
+        <div className="mb-6 rounded-3xl bg-[#F6E7A1] p-5 text-sm font-medium text-[#4E4A29]">
+          Run AI Farm Analysis first to create your baseline farm condition.
         </div>
       )}
 
+      {/* SCENARIO + BASELINE */}
+      <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        {/* SCENARIO */}
+        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-[#DDE7DD] md:p-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-bold text-[#263A32]">
+                Change your scenario
+              </h3>
 
-      {/* =====================================================
-          SCENARIO + BASELINE
-      ====================================================== */}
+              <p className="mt-2 text-sm leading-6 text-[#64746D]">
+                Adjust one or more conditions and simulate the outcome.
+              </p>
+            </div>
 
-      <div className="grid gap-6 lg:grid-cols-2">
+            <button
+              type="button"
+              onClick={resetScenario}
+              className="rounded-xl border border-[#DDE7DD] px-4 py-2 text-xs font-bold text-[#64746D] transition hover:bg-[#F7F4E9]"
+            >
+              Reset
+            </button>
+          </div>
 
-        {/* Scenario controls */}
-
-        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-[#DDE7DD]">
-
-          <h3 className="text-xl font-bold">
-            Change your scenario
-          </h3>
-
-          <p className="mt-2 text-sm text-[#64746D]">
-            Adjust one or more conditions and simulate the outcome.
-          </p>
-
-          <div className="mt-6 space-y-6">
-
+          <div className="mt-7 space-y-7">
             <ScenarioControl
               label="Temperature"
+              description="Change in average temperature"
               value={temperatureChange}
               suffix="°C"
               min={-5}
@@ -153,6 +126,7 @@ function WhatIfSimulator({ result, formData }) {
 
             <ScenarioControl
               label="Rainfall"
+              description="Percentage change in rainfall"
               value={rainfallChange}
               suffix="%"
               min={-50}
@@ -164,6 +138,7 @@ function WhatIfSimulator({ result, formData }) {
 
             <ScenarioControl
               label="Irrigation"
+              description="Percentage change in irrigation"
               value={irrigationChange}
               suffix="%"
               min={-50}
@@ -175,6 +150,7 @@ function WhatIfSimulator({ result, formData }) {
 
             <ScenarioControl
               label="Fertilizer"
+              description="Percentage change in fertilizer"
               value={fertilizerChange}
               suffix="%"
               min={-50}
@@ -183,146 +159,150 @@ function WhatIfSimulator({ result, formData }) {
               onChange={setFertilizerChange}
               color="bg-[#F3B5A4]"
             />
-
           </div>
 
-
           <button
+            type="button"
             onClick={handleSimulation}
             disabled={loading || !result}
             className="mt-8 w-full rounded-2xl bg-[#263A32] px-6 py-4 text-sm font-bold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading
-              ? "Running simulation..."
+              ? "Running digital farm simulation..."
               : "Run Digital Farm Simulation →"}
           </button>
 
-
           {error && (
-            <div className="mt-4 rounded-2xl bg-[#F3B5A4] p-4 text-sm">
+            <div className="mt-4 rounded-2xl bg-[#F3B5A4] p-4 text-sm leading-6 text-[#5C3025]">
               {error}
             </div>
           )}
-
         </div>
 
-
-        {/* Baseline */}
-
-        <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-[#DDE7DD]">
-
-          <span className="rounded-full bg-[#CDE8D2] px-3 py-1 text-xs font-semibold">
-            Current Baseline
+        {/* BASELINE */}
+        <div className="rounded-3xl bg-[#263A32] p-6 text-white shadow-sm md:p-8">
+          <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
+            CURRENT BASELINE
           </span>
 
           <h3 className="mt-4 text-2xl font-bold">
-            {result?.recommended_crop?.crop || "—"}
+            {result?.recommended_crop?.crop || "No analysis yet"}
           </h3>
 
-
           {result ? (
-
-            <div className="mt-6 space-y-4">
-
-              <ComparisonRow
-                label="Yield"
-                value={`${result.recommended_crop.predicted_yield_kg_per_ha} kg/ha`}
+            <div className="mt-6 space-y-3">
+              <BaselineRow
+                label="Predicted Yield"
+                value={`${Number(
+                  result.recommended_crop.predicted_yield_kg_per_ha
+                ).toLocaleString("en-IN")} kg/ha`}
               />
 
-              <ComparisonRow
-                label="Profit"
+              <BaselineRow
+                label="Estimated Profit"
                 value={formatCurrency(
                   result.recommended_crop.estimated_profit
                 )}
               />
 
-              <ComparisonRow
-                label="Water"
+              <BaselineRow
+                label="Available Water"
                 value={`${Math.round(
-                  result.water_analysis
-                    .available_water_liters
+                  result.water_analysis.available_water_liters
                 ).toLocaleString("en-IN")} L`}
               />
 
-              <ComparisonRow
+              <BaselineRow
                 label="Sustainability"
                 value={`${result.sustainability.sustainability_score}/100`}
               />
-
             </div>
-
           ) : (
-
-            <p className="mt-4 text-sm text-[#64746D]">
-              Baseline will appear here after farm analysis.
+            <p className="mt-5 text-sm leading-6 text-[#D5E0DB]">
+              Baseline metrics will appear here after farm analysis.
             </p>
-
           )}
 
-        </div>
+          {result && (
+            <div className="mt-6 border-t border-white/10 pt-5">
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#AFC1B8]">
+                Simulation principle
+              </p>
 
+              <p className="mt-2 text-sm leading-6 text-[#E4ECE7]">
+                AgriTwin keeps the current farm as the baseline and estimates
+                how the selected changes affect yield, profit, water and
+                sustainability.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
 
-
-      {/* =====================================================
-          SIMULATION RESULT
-      ====================================================== */}
-
+      {/* SIMULATION RESULT */}
       {simulation && (
-
         <section className="mt-8">
-
-          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-[#DDE7DD]">
-
+          <div className="rounded-3xl bg-white p-6 shadow-sm ring-1 ring-[#DDE7DD] md:p-8">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-
               <div>
-
-                <span className="rounded-full bg-[#A8DADC] px-3 py-1 text-xs font-semibold">
-                  Simulation Result
+                <span className="rounded-full bg-[#A8DADC] px-3 py-1 text-xs font-semibold text-[#263A32]">
+                  SIMULATION COMPLETE
                 </span>
 
-                <h3 className="mt-3 text-2xl font-bold">
+                <h3 className="mt-3 text-2xl font-bold text-[#263A32]">
                   Baseline vs Scenario
                 </h3>
-
               </div>
 
-              <span className="rounded-full bg-[#F7F4E9] px-4 py-2 text-sm font-bold">
-                {simulation.climate_risk.risk_level} climate risk
+              <span className="rounded-full bg-[#F7F4E9] px-4 py-2 text-sm font-bold text-[#263A32]">
+                {simulation?.climate_risk?.risk_level || "Unknown"} climate risk
               </span>
-
             </div>
 
+            {/* SCENARIO SUMMARY */}
+            <div className="mt-6 grid gap-3 sm:grid-cols-4">
+              <SummaryItem
+                label="Temperature"
+                value={formatSigned(temperatureChange, "°C")}
+              />
 
-            {/* Results */}
+              <SummaryItem
+                label="Rainfall"
+                value={formatSigned(rainfallChange, "%")}
+              />
 
-            <div className="mt-6 grid gap-4 md:grid-cols-3">
+              <SummaryItem
+                label="Irrigation"
+                value={formatSigned(irrigationChange, "%")}
+              />
 
+              <SummaryItem
+                label="Fertilizer"
+                value={formatSigned(fertilizerChange, "%")}
+              />
+            </div>
+
+            {/* RESULT CARDS */}
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
               <ComparisonCard
                 title="Yield"
-                baseline={`${simulation.baseline.yield_kg_per_ha} kg/ha`}
-                scenario={`${simulation.scenario_result.yield_kg_per_ha} kg/ha`}
-                change={
-                  simulation.change
-                    .yield_change_kg_per_ha
-                }
+                baseline={`${Number(
+                  simulation.baseline.yield_kg_per_ha
+                ).toLocaleString("en-IN")} kg/ha`}
+                scenario={`${Number(
+                  simulation.scenario_result.yield_kg_per_ha
+                ).toLocaleString("en-IN")} kg/ha`}
+                change={simulation.change.yield_change_kg_per_ha}
                 suffix=" kg/ha"
                 bg="bg-[#CDE8D2]"
               />
 
               <ComparisonCard
                 title="Profit"
-                baseline={formatCurrency(
-                  simulation.baseline.profit
-                )}
-                scenario={formatCurrency(
-                  simulation.scenario_result.profit
-                )}
-                change={
-                  simulation.change.profit_change
-                }
-                currency
+                baseline={formatCurrency(simulation.baseline.profit)}
+                scenario={formatCurrency(simulation.scenario_result.profit)}
+                change={simulation.change.profit_change}
+                currency={true}
                 bg="bg-[#F6E7A1]"
               />
 
@@ -334,95 +314,67 @@ function WhatIfSimulator({ result, formData }) {
                 scenario={`${Math.round(
                   simulation.scenario_result.water_liters
                 ).toLocaleString("en-IN")} L`}
-                change={
-                  simulation.change.water_change_liters
-                }
+                change={simulation.change.water_change_liters}
                 suffix=" L"
                 bg="bg-[#A8DADC]"
               />
 
-            </div>
-
-
-            <div className="mt-4">
-
               <ComparisonCard
                 title="Sustainability"
-                baseline={`${simulation.baseline.sustainability_score}`}
-                scenario={`${simulation.scenario_result.sustainability_score}`}
-                change={
-                  simulation.change
-                    .sustainability_change
-                }
+                baseline={`${simulation.baseline.sustainability_score}/100`}
+                scenario={`${simulation.scenario_result.sustainability_score}/100`}
+                change={simulation.change.sustainability_change}
                 suffix=""
-                bg="bg-[#CDE8D2]"
+                bg="bg-[#E7F1DE]"
               />
-
             </div>
 
-
-            {/* Climate */}
-
+            {/* CLIMATE IMPACT */}
             <div className="mt-6 rounded-2xl bg-[#F7F4E9] p-5">
-
               <p className="text-xs font-semibold uppercase tracking-wide text-[#64746D]">
-                Climate Impact
+                CLIMATE IMPACT
               </p>
 
-              <p className="mt-2 text-sm leading-6">
-                {simulation.climate_risk.recommendation}
+              <p className="mt-2 text-sm leading-6 text-[#263A32]">
+                {simulation?.climate_risk?.recommendation ||
+                  "No climate recommendation returned."}
               </p>
 
-
-              <div className="mt-4 flex flex-wrap gap-2">
-
-                {simulation.climate_risk.drivers.map(
-                  (driver) => (
-                    <span
-                      key={driver}
-                      className="rounded-full bg-white px-3 py-2 text-xs"
-                    >
-                      {driver}
-                    </span>
-                  )
+              {simulation?.climate_risk?.drivers &&
+                simulation.climate_risk.drivers.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {simulation.climate_risk.drivers.map((driver) => (
+                      <span
+                        key={driver}
+                        className="rounded-full bg-white px-3 py-2 text-xs text-[#4E5E55]"
+                      >
+                        {driver}
+                      </span>
+                    ))}
+                  </div>
                 )}
-
-              </div>
-
             </div>
 
-
-            {/* Decision */}
-
+            {/* DECISION */}
             <div className="mt-6 rounded-2xl bg-[#F3B5A4] p-5">
-
-              <p className="text-xs font-semibold uppercase tracking-wide">
-                AgriTwin Decision
+              <p className="text-xs font-semibold uppercase tracking-wide text-[#5C3025]">
+                AGRITWIN DECISION
               </p>
 
-              <p className="mt-2 text-sm font-medium leading-6">
-                {simulation.decision}
+              <p className="mt-2 text-sm font-medium leading-7 text-[#3E2923]">
+                {simulation.decision || "No decision recommendation returned."}
               </p>
-
             </div>
-
           </div>
-
         </section>
-
       )}
-
     </section>
   );
 }
 
-
-/* ============================================================
-   SCENARIO CONTROL
-============================================================ */
-
 function ScenarioControl({
   label,
+  description,
   value,
   suffix,
   min,
@@ -431,26 +383,25 @@ function ScenarioControl({
   onChange,
   color,
 }) {
-
   return (
     <div>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <label className="text-sm font-semibold text-[#263A32]">
+            {label}
+          </label>
 
-      <div className="flex items-center justify-between">
-
-        <label className="text-sm font-semibold">
-          {label}
-        </label>
+          <p className="mt-1 text-xs text-[#7A877F]">{description}</p>
+        </div>
 
         <span
-          className={`rounded-xl ${color} px-3 py-1 text-sm font-bold`}
+          className={`rounded-xl ${color} px-3 py-1 text-sm font-bold text-[#263A32]`}
         >
           {value > 0 ? "+" : ""}
           {value}
           {suffix}
         </span>
-
       </div>
-
 
       <input
         type="range"
@@ -458,141 +409,114 @@ function ScenarioControl({
         max={max}
         step={step}
         value={value}
-        onChange={(event) =>
-          onChange(
-            Number(event.target.value)
-          )
-        }
+        onChange={(event) => onChange(Number(event.target.value))}
         className="mt-4 w-full accent-[#A8C3A0]"
       />
 
-
-      <div className="mt-1 flex justify-between text-xs text-[#64746D]">
-
+      <div className="mt-2 flex justify-between text-xs text-[#64746D]">
         <span>
           {min > 0 ? "+" : ""}
           {min}
           {suffix}
         </span>
 
-        <span>
-          Baseline
-        </span>
+        <span>Baseline</span>
 
         <span>
           {max > 0 ? "+" : ""}
           {max}
           {suffix}
         </span>
-
       </div>
-
     </div>
   );
 }
 
-
-/* ============================================================
-   COMPARISON ROW
-============================================================ */
-
-function ComparisonRow({
-  label,
-  value,
-}) {
-
+function BaselineRow({ label, value }) {
   return (
-    <div className="flex items-center justify-between rounded-2xl bg-[#F7F4E9] p-4">
+    <div className="flex items-center justify-between rounded-2xl bg-white/10 p-4">
+      <span className="text-sm text-[#C9D6D0]">{label}</span>
 
-      <span className="text-sm text-[#64746D]">
-        {label}
-      </span>
-
-      <span className="text-sm font-bold">
+      <span className="text-right text-sm font-bold text-white">
         {value}
       </span>
-
     </div>
   );
 }
 
+function SummaryItem({ label, value }) {
+  return (
+    <div className="rounded-2xl border border-[#DDE7DD] bg-[#F7F4E9] p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-[#7A877F]">
+        {label}
+      </p>
 
-/* ============================================================
-   COMPARISON CARD
-============================================================ */
+      <p className="mt-1 text-sm font-bold text-[#263A32]">{value}</p>
+    </div>
+  );
+}
 
 function ComparisonCard({
   title,
   baseline,
   scenario,
   change,
-  suffix,
+  suffix = "",
   currency = false,
   bg,
 }) {
+  const numericChange = Number(change) || 0;
+
+  let changeText = "";
+
+  if (currency) {
+    changeText = formatCurrency(numericChange);
+  } else {
+    changeText =
+      (numericChange > 0 ? "+" : "") +
+      numericChange.toFixed(2) +
+      suffix;
+  }
 
   return (
     <div className={`rounded-2xl ${bg} p-5`}>
-
-      <p className="text-sm font-semibold">
-        {title}
-      </p>
-
+      <p className="text-sm font-semibold text-[#263A32]">{title}</p>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
+        <div className="rounded-xl bg-white/60 p-4">
+          <p className="text-xs text-[#64746D]">Baseline</p>
 
-        <div className="rounded-xl bg-white/60 p-3">
-
-          <p className="text-xs text-[#64746D]">
-            Baseline
-          </p>
-
-          <p className="mt-1 text-sm font-bold">
+          <p className="mt-1 text-sm font-bold text-[#263A32]">
             {baseline}
           </p>
-
         </div>
 
+        <div className="rounded-xl bg-white/80 p-4">
+          <p className="text-xs text-[#64746D]">Scenario</p>
 
-        <div className="rounded-xl bg-white/80 p-3">
-
-          <p className="text-xs text-[#64746D]">
-            Scenario
-          </p>
-
-          <p className="mt-1 text-sm font-bold">
+          <p className="mt-1 text-sm font-bold text-[#263A32]">
             {scenario}
           </p>
-
         </div>
-
       </div>
 
-
-      <p className="mt-4 text-sm font-bold">
-
-        Change:{" "}
-
-        {change > 0 ? "+" : ""}
-
-        {currency
-          ? formatCurrency(change)
-          : `${Number(change).toFixed(2)}${suffix}`}
-
+      <p className="mt-4 text-sm font-bold text-[#263A32]">
+        Change: {changeText}
       </p>
-
     </div>
   );
 }
 
+function formatSigned(value, suffix) {
+  const number = Number(value) || 0;
 
-/* ============================================================
-   CURRENCY FORMATTER
-============================================================ */
-
-function formatCurrency(value) {
-  return `₹${Math.round(value).toLocaleString("en-IN")}`;
+  return `${number > 0 ? "+" : ""}${number}${suffix}`;
 }
 
+function formatCurrency(value) {
+  const number = Number(value) || 0;
+
+  return `₹${Math.round(number).toLocaleString("en-IN")}`;
+}
 
 export default WhatIfSimulator;
